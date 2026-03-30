@@ -40,13 +40,11 @@
     \centering
     \vspace*{1cm}
 
-    % TODO: Add GSoC logo image
-    % \includegraphics[width=0.25\textwidth]{gsoc_logo.png}\\[0.4cm]
+    \includegraphics[width=0.25\textwidth]{gsoc_logo.png}\\[0.4cm]
     {\large\textbf{Google Summer of Code 2026}}\\[0.3cm]
     {\large @}\\[0.8cm]
 
-    % TODO: Add Qubes OS logo image
-    % \includegraphics[width=0.35\textwidth]{images.png}\\[0.3cm]
+    \includegraphics[width=0.35\textwidth]{images.png}\\[0.3cm]
     {\large\textbf{QUBES OS}}\\
     {\small\textit{A Reasonably Secure Operating System}}\\[1.5cm]
 
@@ -146,13 +144,13 @@ See \href{https://github.com/QubesOS/qubes-issues/issues/4371}{issue \#4371} and
 \subsection*{Committed Deliverables for the GSoC Term}
 
 \begin{enumerate}
-    \item \textbf{UKI Signing Tool (\texttt{qubes-uki-sign}):} Signs the pre-built unified \texttt{xen.efi} from \texttt{qubes-vmm-xen-unified} with user-generated keys, configurable via \texttt{/etc/qubes/secureboot.conf}
+    \item \textbf{UKI Signing Tool (\texttt{qubes-uki-sign}):} Signs the pre-built unified \texttt{xen.efi} from \texttt{qubes-vmm-xen-unified} with user-generated keys, configurable via\\ \texttt{/etc/qubes/secureboot.conf}
 
     \item \textbf{Key Management (\texttt{qubes-sb-keygen}):} Generates a PK/KEK/db key hierarchy with configurable key parameters, produces EFI authenticated variable files (\texttt{.auth}), and provides step-by-step enrollment instructions
 
     \item \textbf{Update Integration:} A post-transaction RPM hook that automatically re-signs the UKI whenever \texttt{qubes-vmm-xen-unified} or Dom0 kernel packages are updated, with \texttt{qubes-pecheck} verification before installation
 
-    \item \textbf{Fallback Recovery:} A fallback UKI (\texttt{qubes-fallback.efi}) built from a last-known-good snapshot, registered as a lower-priority UEFI boot entry, with \texttt{qubes-uki-promote-fallback} command
+    \item \textbf{Fallback Recovery (\texttt{qubes-uki-promote-fallback}):} A fallback UKI \\ (\texttt{qubes-fallback.efi}) built from a last-known-good snapshot, registered as a lower-priority UEFI boot entry; includes automatic fallback selection on boot failure and manual promotion command
 
     \item \textbf{Documentation:} Complete coverage of key generation, signing workflow, enrollment, update integration, and recovery procedures
 \end{enumerate}
@@ -335,7 +333,7 @@ The \texttt{qubes-sb-keygen} subcommand generates the full PK/KEK/db hierarchy w
 
 \subsection{Update Hook and Atomic Replacement}
 
-The update hook is a post-transaction RPM scriptlet that triggers on updates to \texttt{qubes-vmm-xen-unified} or \texttt{kernel-qubes-dom0}.
+The update hook is a post-transaction RPM scriptlet that triggers on updates to \\ \texttt{qubes-vmm-xen-unified} or \texttt{kernel-qubes-dom0}.
 
 \begin{figure}[H]
 \centering
@@ -395,34 +393,47 @@ The fallback UKI (\texttt{qubes-fallback.efi}) represents a last-known-good stat
 ]
 
 % Boot entries
-\node[block, fill=qubesblue!30] (primary) {\textbf{qubes.efi}\\(Primary - Priority 1)};
-\node[block, fill=securegreen!20, below=1.5cm of primary] (fallback) {\textbf{qubes-fallback.efi}\\(Fallback - Priority 2)};
+\node[block, fill=qubesblue!30] (primary) {\textbf{qubes.efi}\\(Primary)};
+\node[block, fill=securegreen!20, below=1.5cm of primary] (fallback) {\textbf{qubes-fallback.efi}\\(Fallback)};
+
+% Boot counter mechanism
+\node[block, fill=warnorange!20, right=2cm of primary] (counter) {boot\_counter\\decrements};
+\node[block, fill=securegreen!30, right=2cm of counter] (success) {boot\_success=1\\(systemd sets)};
 
 % Decision
-\node[block, fill=lightgray, right=2.5cm of primary] (uefi) {UEFI Boot\\Manager};
-
-% Outcomes
-\node[block, fill=securegreen!30, right=2.5cm of uefi] (success) {Boot\\Success};
-\node[block, fill=red!20, below=of success] (panic) {Boot Failure\\or Panic};
-\node[block, fill=warnorange!20, below=of panic] (manual) {User Selects\\Fallback};
+\node[block, fill=red!20, below=of counter] (fail) {counter=0\\Boot failed};
 
 % Arrows
-\draw[arrow] (uefi) -- node[above, font=\footnotesize] {Try first} (primary);
-\draw[arrow] (primary) -- (success);
-\draw[arrow, dashed] (primary) -- (panic);
-\draw[arrow] (panic) -- (manual);
-\draw[arrow] (manual) -| (fallback);
-\draw[arrow] (fallback) -- ++(-2,0) |- (success);
-
-% Promotion
-\node[below=1.2cm of fallback, font=\footnotesize, align=center] (promote) {\texttt{qubes-uki-promote-fallback}\\promotes current primary to fallback\\after confirmed successful boot};
+\draw[arrow] (primary) -- (counter);
+\draw[arrow] (counter) -- node[above, font=\footnotesize] {Boot OK} (success);
+\draw[arrow, dashed] (counter) -- node[right, font=\footnotesize] {No success} (fail);
+\draw[arrow] (fail) -| node[above, font=\footnotesize, pos=0.3] {Auto-select} (fallback);
+\draw[arrow, dashed, gray] (success) -- ++(0,-2.5) -| node[below, font=\footnotesize, pos=0.2, text=gray] {Manual promote} (fallback);
 
 \end{tikzpicture}
-\caption{Fallback recovery flow. Users can recover from a bad update by selecting the fallback entry from the UEFI boot menu.}
+\caption{Automatic fallback using GRUB boot\_counter/boot\_success variables. Failed boots automatically trigger fallback selection.}
 \label{fig:fallback}
 \end{figure}
 
-The fallback is deliberately not auto-updated. It only changes when the user explicitly runs \texttt{qubes-uki-promote-fallback} after confirming the primary UKI boots correctly.
+\textbf{Leveraging Fedora's boot\_success mechanism:} Fedora implements automatic boot failure detection using GRUB environment variables (\texttt{boot\_counter} and \texttt{boot\_success}), originally developed for the \href{https://fedoraproject.org/wiki/Changes/HiddenGrubMenu}{Hidden GRUB Menu} feature. The mechanism works as follows:
+
+\begin{enumerate}
+    \item On boot, GRUB decrements \texttt{boot\_counter}
+    \item If boot succeeds, a systemd service sets \texttt{boot\_success=1} and resets the counter
+    \item If \texttt{boot\_counter} reaches 0 without success, GRUB automatically selects the fallback entry
+\end{enumerate}
+
+This project will adapt this mechanism for UKI fallback selection, eliminating the need for manual intervention after a failed boot.
+
+\textbf{Note on current Qubes configuration:} Qubes currently disables Fedora's boot\_counter mechanism in its GRUB configuration. Before re-enabling this for UKI fallback, I will need to:
+\begin{enumerate}
+    \item Investigate \textit{why} Qubes disabled this mechanism (potential reasons include: conflicts with Xen-specific boot flow, user expectation mismatches, or issues with the hidden GRUB menu behavior)
+    \item Determine whether the original concerns apply to the UKI boot path
+    \item Identify the specific configuration changes required (e.g., modifying relevant GRUB and systemd configuration, adjusting \texttt{/etc/default/grub} settings, or adapting the mechanism for EFI boot entries rather than GRUB menu entries)
+\end{enumerate}
+This investigation is scheduled for community bonding and Week 7, with findings documented before implementation.
+
+The \texttt{qubes-uki-promote-fallback} command will still exist for explicit promotion of a known-good UKI to fallback status.
 
 \textbf{Troubleshooting limitation:} UKI bundles prevent runtime modification of boot parameters. If the primary UKI boots but Qubes misbehaves, users cannot add debug flags at the GRUB prompt as they could with traditional boot. The fallback addresses catastrophic failures (signature mismatch, kernel panic), but for parameter debugging, users must either: (1) rebuild a debug UKI with modified parameters and sign it, or (2) temporarily disable Secure Boot. The documentation will cover both workflows.
 
@@ -501,7 +512,7 @@ Both patches will be submitted during community bonding.
 \textbf{Date / Period} & \textbf{Phase} & \textbf{Detailed Sub-Tasks} \\
 \midrule
 May 1 -- May 26 & Community Bonding &
-Finalise \texttt{secureboot.conf} schema with Marek. Set up QEMU + OVMF test environment. Submit \texttt{qubes-pecheck} patches. Review \texttt{qubes-vmm-xen-unified} build scripts. \\
+Finalise \texttt{secureboot.conf} schema with Marek. Set up QEMU + OVMF test environment. Submit \texttt{qubes-pecheck} patches. Investigate why Qubes disables boot\_counter mechanism. Review \texttt{qubes-vmm-xen-unified} build scripts. \\
 \midrule
 Week 1--2 \newline (May 27 -- June 9) & Signing Core &
 Implement \texttt{qubes-uki-sign} wrapper around \texttt{sbsign}. Parse \texttt{secureboot.conf}. Unit tests with real unified binaries in QEMU/OVMF. \\
@@ -614,9 +625,9 @@ I came to this project through genuine study of the Qubes boot stack. I watched 
 
 \subsection*{Prior Contributions to Qubes OS}
 
-\textbf{qubes-core-agent-linux PR \#644:} Open, under review by Marek.
+\textbf{qubes-core-agent-linux \href{https://github.com/QubesOS/qubes-core-agent-linux/pull/644}{PR \#644}:} Approved, pending merge.
 
-Fixes a race condition in \texttt{qubes-firewall} (issues \#3735/\#10643). Root cause: \texttt{sd\_notify('READY=1')} fires before initialisation completes, causing SIGHUP to interrupt \texttt{qdb.read()} mid-protocol. An initial retry-loop fix was rejected because interrupting \texttt{qdb.read()} after sending a request desynchronises the QubesDB protocol. The approved approach uses \texttt{signal.pthread\_sigmask} to block SIGHUP/SIGTERM during all qdb operations.
+Fixes a race condition in \texttt{qubes-firewall} (issues \href{https://github.com/QubesOS/qubes-issues/issues/3735}{\#3735}/ \href{https://github.com/QubesOS/qubes-issues/issues/10643}{\#10643}). Root cause: \\\texttt{sd\_notify('READY=1')} fires before initialisation completes, causing SIGHUP to interrupt \texttt{qdb.read()} mid-protocol. An initial retry-loop fix was rejected because interrupting \texttt{qdb.read()} after sending a request desynchronises the QubesDB protocol. The approved approach uses\\ \texttt{signal.pthread\_sigmask} to block SIGHUP/SIGTERM during all qdb operations.
 
 \textbf{qubes-pecheck starter task:} Analysis complete, patches in progress.
 
@@ -651,9 +662,12 @@ My university examinations conclude in May. I will treat this as a full-time com
     \item Qubes Secure Boot Discussion: \href{https://github.com/QubesOS/qubes-issues/issues/4371}{Issue \#4371}
     \item Xen UKI Support: \href{https://github.com/QubesOS/qubes-issues/issues/8206}{Issue \#8206}
     \item Qubes Unified Xen: \href{https://github.com/QubesOS/qubes-vmm-xen-unified}{qubes-vmm-xen-unified repository}
+    \item Fedora Boot Success Mechanism: \href{https://fedoraproject.org/wiki/Changes/HiddenGrubMenu}{Hidden GRUB Menu Change}
     \item UEFI Specification: \href{https://uefi.org/specifications}{uefi.org/specifications}
     \item Xen Unified Boot: \href{https://xenbits.xen.org/docs/unstable/misc/efi.html}{Xen EFI Documentation}
-    \item PE/COFF Specification: Microsoft PE Format Documentation
+    \item PE/COFF Specification: \href{https://learn.microsoft.com/en-us/windows/win32/debug/pe-format}{ Microsoft PE Format Documentation}
 \end{itemize}
 
 \end{document}
+
+
